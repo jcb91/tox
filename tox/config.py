@@ -12,6 +12,7 @@ import pluggy
 
 import tox.interpreters
 from tox import hookspecs
+from tox._verlib import NormalizedVersion
 
 import py
 
@@ -180,7 +181,7 @@ class PosargsOption:
 class InstallcmdOption:
     name = "install_command"
     type = "argv"
-    default = "pip install {opts} {packages}"
+    default = "python -m pip install {opts} {packages}"
     help = "install command for dependencies and package under test."
 
     def postprocess(self, testenv_config, value):
@@ -517,6 +518,13 @@ def tox_addoption(parser):
         help="install package in develop/editable mode")
 
     parser.add_testenv_attribute_obj(InstallcmdOption())
+
+    parser.add_testenv_attribute(
+        name = "list_dependencies_command",
+        type = "argv",
+        default = "python -m pip freeze",
+        help = "list dependencies for a virtual environment")
+
     parser.add_testenv_attribute_obj(DepOption())
 
     parser.add_testenv_attribute(
@@ -664,8 +672,18 @@ class parseini:
 
         reader.addsubstitutions(toxinidir=config.toxinidir,
                                 homedir=config.homedir)
-        config.toxworkdir = reader.getpath("toxworkdir", "{toxinidir}/.tox")
+        # As older versions of tox may have bugs or incompatabilities that
+        # prevent parsing of tox.ini this must be the first thing checked.
         config.minversion = reader.getstring("minversion", None)
+        # Parse our compatability immediately
+        if config.minversion:
+            minversion = NormalizedVersion(self.config.minversion)
+            toxversion = NormalizedVersion(tox.__version__)
+            if toxversion < minversion:
+                raise tox.exception.MinVersionError(
+                    "tox version is %s, required is at least %s" % (
+                        toxversion, minversion))
+        config.toxworkdir = reader.getpath("toxworkdir", "{toxinidir}/.tox")
 
         if not config.option.skip_missing_interpreters:
             config.option.skip_missing_interpreters = \
@@ -1094,7 +1112,7 @@ class _ArgvlistReader:
             current_command += line
 
             if is_section_substitution(current_command):
-                replaced = reader._replace(current_command)
+                replaced = reader._replace(current_command, crossonly=True)
                 commands.extend(cls.getargvlist(reader, replaced))
             else:
                 commands.append(cls.processcommand(reader, current_command))
