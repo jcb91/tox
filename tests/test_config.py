@@ -274,6 +274,34 @@ class TestIniParserAgainstCommandsKey:
             ["echo", "cmd", "1", "2", "3", "4", "cmd", "2"],
         ]
 
+    def test_command_substitution_from_other_section_posargs(self, newconfig):
+        """Ensure subsitition from other section with posargs succeeds"""
+        config = newconfig("""
+            [section]
+            key = thing {posargs} arg2
+            [testenv]
+            commands =
+                {[section]key}
+            """)
+        reader = SectionReader("testenv", config._cfg)
+        reader.addsubstitutions([r"argpos"])
+        x = reader.getargvlist("commands")
+        assert x == [['thing', 'argpos', 'arg2']]
+
+    def test_command_section_and_posargs_substitution(self, newconfig):
+        """Ensure subsitition from other section with posargs succeeds"""
+        config = newconfig("""
+            [section]
+            key = thing arg1
+            [testenv]
+            commands =
+                {[section]key} {posargs} endarg
+            """)
+        reader = SectionReader("testenv", config._cfg)
+        reader.addsubstitutions([r"argpos"])
+        x = reader.getargvlist("commands")
+        assert x == [['thing', 'arg1', 'argpos', 'endarg']]
+
     def test_command_env_substitution(self, newconfig):
         """Ensure referenced {env:key:default} values are substituted correctly."""
         config = newconfig("""
@@ -1410,10 +1438,10 @@ class TestGlobalOptions:
     def test_minversion(self, tmpdir, newconfig, monkeypatch):
         inisource = """
             [tox]
-            minversion = 3.0
+            minversion = 10.0
         """
-        config = newconfig([], inisource)
-        assert config.minversion == "3.0"
+        with py.test.raises(tox.exception.MinVersionError):
+            config = newconfig([], inisource)
 
     def test_skip_missing_interpreters_true(self, tmpdir, newconfig, monkeypatch):
         inisource = """
